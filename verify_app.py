@@ -1,6 +1,13 @@
-import urllib.request
+"""
+End-to-end check for the AI 뉴스 브리핑 app.
+
+Usage:
+    python verify_app.py                      # against http://127.0.0.1:5000
+    python verify_app.py https://20260927v.vercel.app
+"""
 import json
 import sys
+import urllib.request
 
 if sys.platform == 'win32':
     try:
@@ -8,108 +15,66 @@ if sys.platform == 'win32':
     except Exception:
         pass
 
-BASE_URL = 'http://127.0.0.1:5000'
+BASE_URL = sys.argv[1].rstrip('/') if len(sys.argv) > 1 else 'http://127.0.0.1:5000'
+
+
+def call(method, path, body=None):
+    data = json.dumps(body).encode('utf-8') if body is not None else None
+    req = urllib.request.Request(f'{BASE_URL}{path}', data=data, method=method,
+                                 headers={'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        raw = resp.read().decode('utf-8')
+        return resp.status, (json.loads(raw) if raw.startswith('{') else raw)
+
 
 def test_app():
-    print("=== TaskFlow WebApp 검증 시작 ===")
-    
-    # 1. Main Page Check
-    print("\n1. 메인 웹 페이지 (GET /) 요청 테스트...")
-    req = urllib.request.Request(f"{BASE_URL}/")
-    with urllib.request.urlopen(req) as resp:
-        html = resp.read().decode('utf-8')
-        assert resp.status == 200, f"예상치 못한 상태 코드: {resp.status}"
-        assert 'TaskFlow' in html, "페이지 내 TaskFlow 타이틀 누락"
-        assert '새로운 할일 등록' in html, "페이지 내 할일 등록 UI 누락"
-        print("  ✓ 메인 HTML 페이지 정상 응답 (Status: 200 OK)")
+    print(f'=== AI 뉴스 브리핑 검증 시작 ({BASE_URL}) ===')
 
-    # 2. Get Todos List
-    print("\n2. 할일 목록 조회 (GET /api/todos) 테스트...")
-    req = urllib.request.Request(f"{BASE_URL}/api/todos")
-    with urllib.request.urlopen(req) as resp:
-        data = json.loads(resp.read().decode('utf-8'))
-        assert data['success'] is True, "할일 목록 조회 실패"
-        initial_count = len(data['todos'])
-        print(f"  ✓ 초기 할일 {initial_count}개 정상 조회됨")
+    print('\n1. 메인 페이지 (GET /)')
+    status, html = call('GET', '/')
+    assert status == 200 and 'AI' in html and '뉴스 브리핑' in html
+    print('  ✓ 200 OK, 페이지 타이틀 확인')
 
-    # 3. Create Todo
-    print("\n3. 새로운 할일 등록 (POST /api/todos) 테스트...")
-    new_todo_payload = {
-        "title": "자동화 검증 테스트 항목",
-        "description": "Flask 웹앱 기능 검증 스크립트로 자동 생성됨",
-        "category": "테스트",
-        "priority": "high",
-        "due_date": "2026-09-20"
-    }
-    req = urllib.request.Request(
-        f"{BASE_URL}/api/todos",
-        data=json.dumps(new_todo_payload).encode('utf-8'),
-        headers={'Content-Type': 'application/json'},
-        method='POST'
-    )
-    with urllib.request.urlopen(req) as resp:
-        data = json.loads(resp.read().decode('utf-8'))
-        assert data['success'] is True, "할일 등록 실패"
-        created_id = data['todo']['id']
-        assert data['todo']['title'] == new_todo_payload['title']
-        print(f"  ✓ 할일 등록 성공 (ID: {created_id}, Title: '{data['todo']['title']}')")
+    print('\n2. DB 연결 (GET /api/health)')
+    status, data = call('GET', '/api/health')
+    assert data['connected'] is True, data
+    print(f"  ✓ {data['db']['provider']} 연결됨 ({data['db']['host']})")
 
-    # 4. Toggle Todo Status
-    print(f"\n4. 할일 상태 토글 (PATCH /api/todos/{created_id}/toggle) 테스트...")
-    req = urllib.request.Request(
-        f"{BASE_URL}/api/todos/{created_id}/toggle",
-        headers={'Content-Type': 'application/json'},
-        method='PATCH'
-    )
-    with urllib.request.urlopen(req) as resp:
-        data = json.loads(resp.read().decode('utf-8'))
-        assert data['success'] is True, "할일 상태 토글 실패"
-        assert data['todo']['completed'] == 1, "완료 상태가 1로 변경되지 않음"
-        print(f"  ✓ 할일 완료 상태 토글 성공 (completed = {data['todo']['completed']})")
+    print('\n3. 통계 (GET /api/stats)')
+    status, data = call('GET', '/api/stats')
+    s = data['stats']
+    assert data['success'] and set(['total', 'done', 'pending', 'mk', 'hk']).issubset(s)
+    print(f"  ✓ 전체 {s['total']} / 매경 {s['mk']} / 한경 {s['hk']} / 요약완료 {s['done']} / 대기 {s['pending']} / 엔진 {s['summarizer']}")
 
-    # 5. Update Todo
-    print(f"\n5. 할일 정보 수정 (PUT /api/todos/{created_id}) 테스트...")
-    update_payload = {
-        "title": "자동화 검증 테스트 항목 (수정 완료)",
-        "description": "설명 내용 업데이트됨",
-        "category": "테스트",
-        "priority": "medium",
-        "due_date": "2026-09-25"
-    }
-    req = urllib.request.Request(
-        f"{BASE_URL}/api/todos/{created_id}",
-        data=json.dumps(update_payload).encode('utf-8'),
-        headers={'Content-Type': 'application/json'},
-        method='PUT'
-    )
-    with urllib.request.urlopen(req) as resp:
-        data = json.loads(resp.read().decode('utf-8'))
-        assert data['success'] is True, "할일 정보 수정 실패"
-        assert data['todo']['title'] == update_payload['title']
-        assert data['todo']['priority'] == "medium"
-        print(f"  ✓ 할일 정보 수정 성공 (Title: '{data['todo']['title']}')")
+    print('\n4. 기사 수집 (POST /api/refresh)')
+    status, data = call('POST', '/api/refresh')
+    assert data['success'], data
+    print(f"  ✓ 신규 {data['inserted']}건, 요약 {data['processed']}건, 남은 대기 {data['remaining']}건")
 
-    # 6. Check Stats
-    print("\n6. 대시보드 통계 조회 (GET /api/stats) 테스트...")
-    req = urllib.request.Request(f"{BASE_URL}/api/stats")
-    with urllib.request.urlopen(req) as resp:
-        data = json.loads(resp.read().decode('utf-8'))
-        assert data['success'] is True, "통계 조회 실패"
-        stats = data['stats']
-        print(f"  ✓ 통계 정상 집계 (전체: {stats['total']}, 완료: {stats['completed']}, 진행중: {stats['pending']}, 달성률: {stats['completion_rate']}%)")
+    print('\n5. 요약 처리 (POST /api/process)')
+    status, data = call('POST', '/api/process')
+    assert data['success'], data
+    print(f"  ✓ 요약 {data['processed']}건, 제외 {data['skipped']}건, 실패 {data['failed']}건, 남은 대기 {data['remaining']}건")
 
-    # 7. Delete Todo
-    print(f"\n7. 할일 삭제 (DELETE /api/todos/{created_id}) 테스트...")
-    req = urllib.request.Request(
-        f"{BASE_URL}/api/todos/{created_id}",
-        method='DELETE'
-    )
-    with urllib.request.urlopen(req) as resp:
-        data = json.loads(resp.read().decode('utf-8'))
-        assert data['success'] is True, "할일 삭제 실패"
-        print(f"  ✓ 할일 ID {created_id} 정상 삭제 완료")
+    print('\n6. 기사 목록 (GET /api/articles)')
+    status, data = call('GET', '/api/articles')
+    arts = data['articles']
+    assert data['success'] and isinstance(arts, list)
+    sources = {a['source'] for a in arts}
+    assert sources.issubset({'매일경제', '한국경제'}), sources
+    done = [a for a in arts if a['status'] == 'done']
+    print(f"  ✓ {len(arts)}건 조회 (출처: {', '.join(sorted(sources)) or '-'}), 요약 완료 {len(done)}건")
+    if done:
+        a = done[0]
+        print(f"     예) [{a['source']}] {a['title']}\n        " + a['summary'].replace('\n', '\n        '))
 
-    print("\n🎉 모든 기능 동작 및 실행 테스트를 100% 통과했습니다!")
+    print('\n7. 출처 필터 + 검색 (GET /api/articles?source=매일경제&search=AI)')
+    status, data = call('GET', '/api/articles?source=%EB%A7%A4%EC%9D%BC%EA%B2%BD%EC%A0%9C&search=AI')
+    assert data['success'] and all(a['source'] == '매일경제' for a in data['articles'])
+    print(f"  ✓ 매일경제 + 'AI' 검색 결과 {len(data['articles'])}건")
+
+    print('\n🎉 모든 검증을 통과했습니다!')
+
 
 if __name__ == '__main__':
     test_app()

@@ -1,12 +1,14 @@
 import os
-from datetime import datetime, date
+from datetime import datetime, date, timedelta, timezone
 
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, execute_values
 
 # Supabase (PostgreSQL) connection string.
 # Locally it is read from .env.local (see app.py); on Vercel it is an env var.
 DATABASE_URL = os.environ.get('DATABASE_URL')
+
+KST = timezone(timedelta(hours=9))
 
 
 def get_connection():
@@ -32,13 +34,15 @@ def check_connection():
 
 
 def _serialize(row):
-    """Convert a DB row to a JSON-friendly dict (timestamps -> strings)."""
+    """Convert a DB row to a JSON-friendly dict (timestamps -> ISO strings in KST)."""
     if row is None:
         return None
     out = dict(row)
     for key, value in out.items():
         if isinstance(value, datetime):
-            out[key] = value.strftime('%Y-%m-%d %H:%M:%S')
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            out[key] = value.astimezone(KST).isoformat()
         elif isinstance(value, date):
             out[key] = value.isoformat()
     return out
@@ -48,196 +52,188 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS todos (
+        CREATE TABLE IF NOT EXISTS articles (
             id SERIAL PRIMARY KEY,
+            source TEXT NOT NULL,
             title TEXT NOT NULL,
+            gnews_url TEXT NOT NULL UNIQUE,
+            url TEXT,
+            published_at TIMESTAMPTZ NOT NULL,
             description TEXT DEFAULT '',
-            category TEXT DEFAULT '업무',
-            priority TEXT DEFAULT 'medium',
-            due_date TEXT,
-            completed INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            completed_at TIMESTAMP
+            content TEXT DEFAULT '',
+            summary TEXT DEFAULT '',
+            summary_method TEXT DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            error TEXT DEFAULT '',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            processed_at TIMESTAMPTZ
         )
     ''')
-
-    # Check if empty, add welcoming sample tasks
-    cursor.execute('SELECT COUNT(*) AS count FROM todos')
-    count = cursor.fetchone()['count']
-    if count == 0:
-        sample_todos = [
-            (
-                "Flask 웹앱 환경 구성 및 테스트",
-                "Python Flask 기반 할일 관리 웹 애플리케이션 정상 기동 확인",
-                "개발",
-                "high",
-                datetime.now().strftime("%Y-%m-%d"),
-                1,
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            ),
-            (
-                "프로젝트 주간 보고서 작성",
-                "이번 주 주요 마일스톤 및 성과 요약하여 팀 공유하기",
-                "업무",
-                "high",
-                datetime.now().strftime("%Y-%m-%d"),
-                0,
-                None
-            ),
-            (
-                "클로드 업무자동화 교재 복습",
-                "프롬프트 엔지니어링 및 AI 에이전트 실습 예제 다시 살펴보기",
-                "학습",
-                "medium",
-                None,
-                0,
-                None
-            ),
-            (
-                "매일 30분 가벼운 운동 및 스트레칭",
-                "건강 관리 루틴 실천하기",
-                "개인",
-                "low",
-                None,
-                0,
-                None
-            )
-        ]
-        cursor.executemany('''
-            INSERT INTO todos (title, description, category, priority, due_date, completed, completed_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ''', sample_todos)
-
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_articles_published ON articles (published_at DESC)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_articles_status ON articles (status)')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS app_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    ''')
     conn.commit()
     conn.close()
 
 
-def get_todos(status=None, category=None, search=None, sort_by='created_desc'):
+# ---------------------------------------------------------------------------
+# Meta (last refresh time etc.)
+# ---------------------------------------------------------------------------
+
+def get_meta(key):
     conn = get_connection()
     cursor = conn.cursor()
-
-    query = 'SELECT * FROM todos WHERE 1=1'
-    params = []
-
-    if status == 'active':
-        query += ' AND completed = 0'
-    elif status == 'completed':
-        query += ' AND completed = 1'
-
-    if category and category != 'all':
-        query += ' AND category = %s'
-        params.append(category)
-
-    if search:
-        query += ' AND (title ILIKE %s OR description ILIKE %s)'
-        wildcard = f'%{search}%'
-        params.extend([wildcard, wildcard])
-
-    if sort_by == 'due_date':
-        query += ' ORDER BY completed ASC, CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date ASC, id DESC'
-    elif sort_by == 'priority':
-        query += ''' ORDER BY completed ASC,
-                    CASE priority
-                        WHEN 'high' THEN 1
-                        WHEN 'medium' THEN 2
-                        WHEN 'low' THEN 3
-                        ELSE 4
-                    END, id DESC'''
-    else:  # default created_desc
-        query += ' ORDER BY completed ASC, id DESC'
-
-    cursor.execute(query, params)
-    todos = [_serialize(row) for row in cursor.fetchall()]
-    conn.close()
-    return todos
-
-
-def get_todo_by_id(todo_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM todos WHERE id = %s', (todo_id,))
+    cursor.execute('SELECT value, updated_at FROM app_meta WHERE key = %s', (key,))
     row = cursor.fetchone()
     conn.close()
     return _serialize(row)
 
 
-def create_todo(title, description='', category='업무', priority='medium', due_date=None):
+def set_meta(key, value):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO todos (title, description, category, priority, due_date)
-        VALUES (%s, %s, %s, %s, %s)
-        RETURNING id
-    ''', (title.strip(), description.strip(), category.strip(), priority, due_date if due_date else None))
-    new_id = cursor.fetchone()['id']
+        INSERT INTO app_meta (key, value, updated_at) VALUES (%s, %s, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    ''', (key, value))
     conn.commit()
     conn.close()
-    return get_todo_by_id(new_id)
 
 
-def update_todo(todo_id, title, description='', category='업무', priority='medium', due_date=None):
+# ---------------------------------------------------------------------------
+# Articles
+# ---------------------------------------------------------------------------
+
+def upsert_candidates(candidates):
+    """Insert newly discovered articles; returns the number actually inserted."""
+    if not candidates:
+        return 0
+    conn = get_connection()
+    cursor = conn.cursor()
+    rows = [(c['source'], c['title'], c['gnews_url'], c['published_at']) for c in candidates]
+    execute_values(cursor, '''
+        INSERT INTO articles (source, title, gnews_url, published_at)
+        VALUES %s
+        ON CONFLICT (gnews_url) DO NOTHING
+    ''', rows, page_size=1000)
+    inserted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return inserted
+
+
+def get_pending(limit=3, days=3):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        UPDATE todos
-        SET title = %s, description = %s, category = %s, priority = %s, due_date = %s
+        SELECT id, source, title, gnews_url, published_at
+        FROM articles
+        WHERE status = 'pending' AND published_at >= NOW() - (%s || ' days')::interval
+        ORDER BY published_at DESC
+        LIMIT %s
+    ''', (str(days), limit))
+    rows = [_serialize(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+
+def count_pending(days=3):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT COUNT(*) AS n FROM articles
+        WHERE status = 'pending' AND published_at >= NOW() - (%s || ' days')::interval
+    ''', (str(days),))
+    n = cursor.fetchone()['n']
+    conn.close()
+    return n
+
+
+def mark_done(article_id, url, description, content, summary, method):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE articles
+        SET url = %s, description = %s, content = %s, summary = %s, summary_method = %s,
+            status = 'done', error = '', processed_at = NOW()
         WHERE id = %s
-    ''', (title.strip(), description.strip(), category.strip(), priority, due_date if due_date else None, todo_id))
+    ''', (url, description, content, summary, method, article_id))
     conn.commit()
     conn.close()
-    return get_todo_by_id(todo_id)
 
 
-def toggle_todo(todo_id):
+def mark_status(article_id, status, error='', url=None):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT completed FROM todos WHERE id = %s', (todo_id,))
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        return None
-
-    new_status = 0 if row['completed'] == 1 else 1
-    completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S") if new_status == 1 else None
-
     cursor.execute('''
-        UPDATE todos
-        SET completed = %s, completed_at = %s
+        UPDATE articles
+        SET status = %s, error = %s, url = COALESCE(%s, url), processed_at = NOW()
         WHERE id = %s
-    ''', (new_status, completed_at, todo_id))
+    ''', (status, error[:500], url, article_id))
     conn.commit()
     conn.close()
-    return get_todo_by_id(todo_id)
 
 
-def delete_todo(todo_id):
+def get_articles(source=None, search=None, days=3, include_pending=True):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('DELETE FROM todos WHERE id = %s', (todo_id,))
-    deleted = cursor.rowcount > 0
+    query = '''
+        SELECT id, source, title, gnews_url, url, published_at, description, summary,
+               summary_method, status, processed_at
+        FROM articles
+        WHERE published_at >= NOW() - (%s || ' days')::interval
+          AND status <> 'skipped'
+    '''
+    params = [str(days)]
+    if not include_pending:
+        query += " AND status = 'done'"
+    if source and source != 'all':
+        query += ' AND source = %s'
+        params.append(source)
+    if search:
+        query += ' AND (title ILIKE %s OR summary ILIKE %s)'
+        params.extend([f'%{search}%', f'%{search}%'])
+    query += ' ORDER BY published_at DESC, id DESC'
+    cursor.execute(query, params)
+    rows = [_serialize(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+
+def get_stats(days=3):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT
+            COUNT(*) FILTER (WHERE status <> 'skipped')                          AS total,
+            COUNT(*) FILTER (WHERE status = 'done')                              AS done,
+            COUNT(*) FILTER (WHERE status = 'pending')                           AS pending,
+            COUNT(*) FILTER (WHERE status = 'failed')                            AS failed,
+            COUNT(*) FILTER (WHERE source = '매일경제' AND status <> 'skipped')   AS mk,
+            COUNT(*) FILTER (WHERE source = '한국경제' AND status <> 'skipped')   AS hk,
+            COUNT(*) FILTER (WHERE summary_method = 'claude')                    AS claude
+        FROM articles
+        WHERE published_at >= NOW() - (%s || ' days')::interval
+    ''', (str(days),))
+    row = dict(cursor.fetchone())
+    conn.close()
+    meta = get_meta('last_refresh')
+    row['last_refresh'] = meta['updated_at'] if meta else None
+    return row
+
+
+def purge_old(days=7):
+    """Delete articles older than the retention window so the free-tier DB stays small."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM articles WHERE published_at < NOW() - (%s || ' days')::interval", (str(days),))
+    n = cursor.rowcount
     conn.commit()
     conn.close()
-    return deleted
-
-
-def get_stats():
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT COUNT(*) AS total, SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) AS completed FROM todos')
-    row = cursor.fetchone()
-    total = row['total'] or 0
-    completed = row['completed'] or 0
-    pending = total - completed
-    rate = round((completed / total * 100), 1) if total > 0 else 0
-
-    cursor.execute("SELECT DISTINCT category FROM todos WHERE category IS NOT NULL AND category != ''")
-    categories = [r['category'] for r in cursor.fetchall()]
-
-    conn.close()
-    return {
-        'total': total,
-        'completed': completed,
-        'pending': pending,
-        'completion_rate': rate,
-        'categories': categories
-    }
+    return n

@@ -1,173 +1,104 @@
 /**
- * TaskFlow Frontend Application Logic
- * Pure Vanilla JavaScript
+ * AI 뉴스 브리핑 - Frontend (Vanilla JS)
+ *
+ * Flow on load:
+ *   1. fetch stats + article list and render immediately
+ *   2. call /api/refresh (discover new articles), then /api/process repeatedly
+ *      until nothing is pending - the list re-renders as summaries arrive.
  */
 
-// Application State
 const state = {
-    todos: [],
-    filterStatus: 'all', // 'all', 'active', 'completed'
-    selectedCategory: 'all',
+    articles: [],
+    source: 'all',          // 'all' | '매일경제' | '한국경제'
     searchQuery: '',
-    sortBy: 'created_desc',
-    editingTodo: null
+    pipelineRunning: false,
 };
 
-// DOM Elements
-const elements = {
+const el = {
     currentDateDisplay: document.getElementById('currentDateDisplay'),
     dbStatus: document.getElementById('dbStatus'),
     dbStatusText: document.getElementById('dbStatusText'),
     footerDbInfo: document.getElementById('footerDbInfo'),
+    footerSummarizer: document.getElementById('footerSummarizer'),
     statTotal: document.getElementById('statTotal'),
-    statPending: document.getElementById('statPending'),
-    statCompleted: document.getElementById('statCompleted'),
+    statMk: document.getElementById('statMk'),
+    statHk: document.getElementById('statHk'),
     statRateText: document.getElementById('statRateText'),
     statProgressBar: document.getElementById('statProgressBar'),
-    addTodoForm: document.getElementById('addTodoForm'),
-    todoTitleInput: document.getElementById('todoTitleInput'),
-    todoCategoryInput: document.getElementById('todoCategoryInput'),
-    todoPriorityInput: document.getElementById('todoPriorityInput'),
-    todoDueDateInput: document.getElementById('todoDueDateInput'),
-    todoDescInput: document.getElementById('todoDescInput'),
-    todoList: document.getElementById('todoList'),
-    emptyState: document.getElementById('emptyState'),
-    tabAll: document.getElementById('tabAll'),
-    tabActive: document.getElementById('tabActive'),
-    tabCompleted: document.getElementById('tabCompleted'),
+    statFootnote: document.getElementById('statFootnote'),
     badgeAll: document.getElementById('badgeAll'),
-    badgeActive: document.getElementById('badgeActive'),
-    badgeCompleted: document.getElementById('badgeCompleted'),
+    badgeMk: document.getElementById('badgeMk'),
+    badgeHk: document.getElementById('badgeHk'),
     searchInput: document.getElementById('searchInput'),
     btnClearSearch: document.getElementById('btnClearSearch'),
-    categoryFilter: document.getElementById('categoryFilter'),
-    categorySuggestions: document.getElementById('categorySuggestions'),
-    sortFilter: document.getElementById('sortFilter'),
-    editModal: document.getElementById('editModal'),
-    editTodoForm: document.getElementById('editTodoForm'),
-    editTodoId: document.getElementById('editTodoId'),
-    editTitleInput: document.getElementById('editTitleInput'),
-    editCategoryInput: document.getElementById('editCategoryInput'),
-    editPriorityInput: document.getElementById('editPriorityInput'),
-    editDueDateInput: document.getElementById('editDueDateInput'),
-    editDescInput: document.getElementById('editDescInput'),
-    btnCloseModal: document.getElementById('btnCloseModal'),
-    btnCancelEdit: document.getElementById('btnCancelEdit'),
-    toastContainer: document.getElementById('toastContainer')
+    btnRefresh: document.getElementById('btnRefresh'),
+    btnRefreshText: document.getElementById('btnRefreshText'),
+    pipelineBar: document.getElementById('pipelineBar'),
+    pipelineText: document.getElementById('pipelineText'),
+    articleList: document.getElementById('articleList'),
+    emptyState: document.getElementById('emptyState'),
+    toastContainer: document.getElementById('toastContainer'),
 };
 
-// Initialize Application
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     setupDateDisplay();
     setupEventListeners();
     fetchDbHealth();
-    fetchStats();
-    fetchTodos();
+    await Promise.all([fetchStats(), fetchArticles()]);
+    runPipeline({ discover: true, silent: true });
 });
 
-// Setup Current Date in Header
 function setupDateDisplay() {
     const now = new Date();
-    const options = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' };
-    elements.currentDateDisplay.textContent = now.toLocaleDateString('ko-KR', options);
+    el.currentDateDisplay.textContent = now.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
 }
 
-// Event Listeners Setup
 function setupEventListeners() {
-    // Add Todo Form Submit
-    elements.addTodoForm.addEventListener('submit', handleAddTodo);
-
-    // Tab Filters
     document.querySelectorAll('.filter-tab').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
-            state.filterStatus = tab.dataset.status;
-            fetchTodos();
+            state.source = tab.dataset.source;
+            fetchArticles();
         });
     });
 
-    // Category Filter Change
-    elements.categoryFilter.addEventListener('change', (e) => {
-        state.selectedCategory = e.target.value;
-        fetchTodos();
+    let searchTimer;
+    el.searchInput.addEventListener('input', (e) => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+            state.searchQuery = e.target.value.trim();
+            el.btnClearSearch.style.display = state.searchQuery ? 'block' : 'none';
+            fetchArticles();
+        }, 300);
     });
-
-    // Sort Filter Change
-    elements.sortFilter.addEventListener('change', (e) => {
-        state.sortBy = e.target.value;
-        fetchTodos();
-    });
-
-    // Search with Debounce
-    let debounceTimer;
-    elements.searchInput.addEventListener('input', (e) => {
-        const val = e.target.value.trim();
-        elements.btnClearSearch.classList.toggle('visible', val.length > 0);
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-            state.searchQuery = val;
-            fetchTodos();
-        }, 250);
-    });
-
-    // Clear Search Button
-    elements.btnClearSearch.addEventListener('click', () => {
-        elements.searchInput.value = '';
-        elements.btnClearSearch.classList.remove('visible');
+    el.btnClearSearch.addEventListener('click', () => {
+        el.searchInput.value = '';
         state.searchQuery = '';
-        fetchTodos();
+        el.btnClearSearch.style.display = 'none';
+        fetchArticles();
     });
 
-    // Edit Modal Events
-    elements.btnCloseModal.addEventListener('click', closeEditModal);
-    elements.btnCancelEdit.addEventListener('click', closeEditModal);
-    elements.editModal.addEventListener('click', (e) => {
-        if (e.target === elements.editModal) closeEditModal();
-    });
-    elements.editTodoForm.addEventListener('submit', handleSaveEdit);
+    el.btnRefresh.addEventListener('click', () => runPipeline({ discover: true, silent: false }));
 }
 
-// API: Fetch Todos
-async function fetchTodos() {
-    try {
-        const params = new URLSearchParams();
-        if (state.filterStatus !== 'all') params.append('status', state.filterStatus);
-        if (state.selectedCategory !== 'all') params.append('category', state.selectedCategory);
-        if (state.searchQuery) params.append('search', state.searchQuery);
-        if (state.sortBy) params.append('sort', state.sortBy);
+// ---------------------------------------------------------------------------
+// Data loading
+// ---------------------------------------------------------------------------
 
-        const res = await fetch(`/api/todos?${params.toString()}`);
-        const data = await res.json();
-
-        if (data.success) {
-            state.todos = data.todos;
-            renderTodoList();
-        }
-    } catch (err) {
-        console.error('할일 목록 불러오기 실패:', err);
-        showToast('할일 목록을 불러오는 중 오류가 발생했습니다.', 'error');
-    }
-}
-
-// API: Fetch Stats
-// Check live database connection and show it in the header/footer
 async function fetchDbHealth() {
     try {
         const res = await fetch('/api/health');
         const data = await res.json();
-        if (data.connected) {
-            elements.dbStatus.classList.add('is-connected');
-            elements.dbStatusText.textContent = `${data.db.provider} 연결됨`;
-            elements.dbStatus.title = `${data.db.host} / ${data.db.database} (${data.db.version})`;
-            elements.footerDbInfo.textContent = `DB: ${data.db.host}`;
-        } else {
-            throw new Error(data.error || 'DB 연결 실패');
-        }
+        if (!data.connected) throw new Error(data.error || 'DB 연결 실패');
+        el.dbStatus.classList.add('is-connected');
+        el.dbStatusText.textContent = `${data.db.provider} 연결됨`;
+        el.dbStatus.title = `${data.db.host} / ${data.db.database} (${data.db.version})`;
+        el.footerDbInfo.textContent = `DB: ${data.db.host}`;
     } catch (err) {
-        elements.dbStatus.classList.add('is-error');
-        elements.dbStatusText.textContent = 'DB 연결 안 됨';
-        elements.footerDbInfo.textContent = 'DB 연결 실패';
+        el.dbStatus.classList.add('is-error');
+        el.dbStatusText.textContent = 'DB 연결 안 됨';
+        el.footerDbInfo.textContent = 'DB 연결 실패';
         console.error('DB 상태 확인 실패:', err);
     }
 }
@@ -175,336 +106,220 @@ async function fetchDbHealth() {
 async function fetchStats() {
     try {
         const res = await fetch('/api/stats');
+        const { stats } = await res.json();
+        const total = stats.total || 0;
+        const done = stats.done || 0;
+        const rate = total ? Math.round((done / total) * 100) : 0;
+
+        el.statTotal.textContent = total;
+        el.statMk.textContent = stats.mk || 0;
+        el.statHk.textContent = stats.hk || 0;
+        el.statRateText.textContent = `${rate}%`;
+        el.statProgressBar.style.width = `${rate}%`;
+        el.statFootnote.textContent = stats.pending
+            ? `요약 대기 ${stats.pending}건${stats.failed ? ` · 실패 ${stats.failed}건` : ''}`
+            : (stats.failed ? `실패 ${stats.failed}건` : '모든 기사 요약 완료');
+        el.badgeAll.textContent = total;
+        el.badgeMk.textContent = stats.mk || 0;
+        el.badgeHk.textContent = stats.hk || 0;
+
+        el.footerSummarizer.textContent = stats.summarizer === 'claude'
+            ? '요약 엔진: Claude (Anthropic API)'
+            : '요약 엔진: 핵심 문장 추출 (ANTHROPIC_API_KEY를 설정하면 Claude AI 요약으로 자동 전환됩니다)';
+        return stats;
+    } catch (err) {
+        console.error('통계 불러오기 실패:', err);
+        return null;
+    }
+}
+
+async function fetchArticles() {
+    try {
+        const params = new URLSearchParams({ source: state.source });
+        if (state.searchQuery) params.set('search', state.searchQuery);
+        const res = await fetch(`/api/articles?${params}`);
         const data = await res.json();
+        state.articles = data.articles || [];
+        renderArticles();
+    } catch (err) {
+        console.error('기사 불러오기 실패:', err);
+        showToast('기사를 불러오지 못했습니다.', 'error');
+    }
+}
 
-        if (data.success) {
-            const { total, completed, pending, completion_rate, categories } = data.stats;
-            elements.statTotal.textContent = total;
-            elements.statPending.textContent = pending;
-            elements.statCompleted.textContent = completed;
-            elements.statRateText.textContent = `${completion_rate}%`;
-            elements.statProgressBar.style.width = `${completion_rate}%`;
+// ---------------------------------------------------------------------------
+// Pipeline: discover new articles, then process pending ones in small batches
+// ---------------------------------------------------------------------------
 
-            elements.badgeAll.textContent = total;
-            elements.badgeActive.textContent = pending;
-            elements.badgeCompleted.textContent = completed;
+async function runPipeline({ discover, silent }) {
+    if (state.pipelineRunning) return;
+    state.pipelineRunning = true;
+    setPipelineUI(true, discover ? '매일경제·한국경제에서 새 AI 기사를 확인하고 있습니다...' : '요약을 생성하고 있습니다...');
 
-            updateCategoryOptions(categories);
+    let totalProcessed = 0, totalInserted = 0, rounds = 0;
+    try {
+        let remaining = 0;
+        if (discover) {
+            const r = await postJson('/api/refresh');
+            totalInserted = r.inserted || 0;
+            totalProcessed += r.processed || 0;
+            remaining = r.remaining || 0;
+            if (r.errors && r.errors.length) console.warn('discover errors', r.errors);
+        } else {
+            remaining = 1;
+        }
+
+        await Promise.all([fetchStats(), fetchArticles()]);
+
+        while (remaining > 0 && rounds < 120) {
+            rounds += 1;
+            setPipelineUI(true, `기사 요약 생성 중... (남은 기사 ${remaining}건)`);
+            const r = await postJson('/api/process');
+            totalProcessed += r.processed || 0;
+            remaining = r.remaining || 0;
+            if ((r.processed || 0) + (r.skipped || 0) + (r.failed || 0) === 0) break; // nothing moved -> stop
+            await Promise.all([fetchStats(), fetchArticles()]);
+        }
+
+        if (!silent || totalInserted || totalProcessed) {
+            showToast(
+                totalInserted || totalProcessed
+                    ? `새 기사 ${totalInserted}건 수집, ${totalProcessed}건 요약 완료`
+                    : '새로운 AI 기사가 없습니다. 최신 상태입니다.',
+                'success'
+            );
         }
     } catch (err) {
-        console.error('통계 데이터 불러오기 실패:', err);
+        console.error('파이프라인 오류:', err);
+        showToast('기사 업데이트 중 오류가 발생했습니다.', 'error');
+    } finally {
+        state.pipelineRunning = false;
+        setPipelineUI(false);
+        await Promise.all([fetchStats(), fetchArticles()]);
     }
 }
 
-// Update Category Filter and Datalist Suggestions
-function updateCategoryOptions(categories) {
-    const currentSelected = elements.categoryFilter.value;
-    
-    // Update Filter Select
-    let optionsHtml = '<option value="all">모든 카테고리</option>';
-    categories.forEach(cat => {
-        if (cat) {
-            optionsHtml += `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`;
-        }
-    });
-    elements.categoryFilter.innerHTML = optionsHtml;
-    if (categories.includes(currentSelected)) {
-        elements.categoryFilter.value = currentSelected;
-    }
-
-    // Update Datalist
-    let datalistHtml = '';
-    const defaultCategories = ['업무', '개발', '학습', '개인', '회의'];
-    const allUnique = Array.from(new Set([...defaultCategories, ...categories]));
-    allUnique.forEach(cat => {
-        if (cat) {
-            datalistHtml += `<option value="${escapeHtml(cat)}">`;
-        }
-    });
-    elements.categorySuggestions.innerHTML = datalistHtml;
+async function postJson(url) {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
+    return res.json();
 }
 
-// Render Todo List to DOM
-function renderTodoList() {
-    elements.todoList.innerHTML = '';
+function setPipelineUI(running, text) {
+    el.pipelineBar.classList.toggle('hidden', !running);
+    if (text) el.pipelineText.textContent = text;
+    el.btnRefresh.disabled = running;
+    el.btnRefreshText.textContent = running ? '업데이트 중...' : '기사 업데이트';
+}
 
-    if (state.todos.length === 0) {
-        elements.emptyState.classList.remove('hidden');
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
+
+function renderArticles() {
+    el.articleList.innerHTML = '';
+    if (!state.articles.length) {
+        el.emptyState.classList.remove('hidden');
         return;
     }
+    el.emptyState.classList.add('hidden');
 
-    elements.emptyState.classList.add('hidden');
+    // group by publish date (KST)
+    const groups = new Map();
+    for (const a of state.articles) {
+        const key = a.published_at.slice(0, 10);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(a);
+    }
 
-    state.todos.forEach(todo => {
-        const item = createTodoElement(todo);
-        elements.todoList.appendChild(item);
-    });
+    for (const [dateKey, items] of groups) {
+        const header = document.createElement('div');
+        header.className = 'date-header';
+        header.innerHTML = `<span class="date-label">${dateLabel(dateKey)}</span><span class="date-count">${items.length}건</span>`;
+        el.articleList.appendChild(header);
+        for (const a of items) el.articleList.appendChild(createArticleCard(a));
+    }
 }
 
-// Create Todo Item Element
-function createTodoElement(todo) {
-    const card = document.createElement('div');
-    card.className = `todo-card ${todo.completed ? 'is-completed' : ''}`;
-    card.id = `todo-${todo.id}`;
+function createArticleCard(a) {
+    const card = document.createElement('article');
+    card.className = `article-card ${a.status !== 'done' ? 'is-pending' : ''}`;
+    const sourceClass = a.source === '매일경제' ? 'badge-mk' : 'badge-hk';
+    const link = a.url || a.gnews_url;
 
-    // Priority badge helper
-    let priorityLabel = '보통';
-    let priorityClass = 'badge-priority-medium';
-    if (todo.priority === 'high') {
-        priorityLabel = '🔥 높음';
-        priorityClass = 'badge-priority-high';
-    } else if (todo.priority === 'low') {
-        priorityLabel = '🌱 낮음';
-        priorityClass = 'badge-priority-low';
+    let summaryHtml;
+    if (a.status === 'done' && a.summary) {
+        const lines = a.summary.split('\n').map(s => s.replace(/^[•\-*·]\s*/, '').trim()).filter(Boolean);
+        summaryHtml = `<ul class="summary-list">${lines.map(l => `<li>${escapeHtml(l)}</li>`).join('')}</ul>`;
+    } else if (a.status === 'failed') {
+        summaryHtml = `<p class="summary-pending is-failed">요약을 생성하지 못했습니다. 원문 링크로 확인해 주세요.</p>`;
     } else {
-        priorityLabel = '⚡ 보통';
+        summaryHtml = `<p class="summary-pending"><span class="spinner small"></span> 요약 생성 대기 중...</p>`;
     }
 
-    // Due date badge calculation
-    let dueBadgeHtml = '';
-    if (todo.due_date) {
-        const dueInfo = formatDueDate(todo.due_date);
-        dueBadgeHtml = `<span class="badge-tag badge-due ${dueInfo.className}">📅 ${escapeHtml(dueInfo.text)}</span>`;
-    }
-
-    // Description
-    const descHtml = todo.description 
-        ? `<p class="todo-desc">${escapeHtml(todo.description)}</p>` 
+    const methodBadge = a.status === 'done'
+        ? `<span class="badge-tag badge-method">${a.summary_method === 'claude' ? '✨ Claude 요약' : '📝 핵심문장 요약'}</span>`
         : '';
 
     card.innerHTML = `
-        <div class="todo-checkbox-wrapper">
-            <input 
-                type="checkbox" 
-                class="todo-checkbox" 
-                id="check-${todo.id}" 
-                ${todo.completed ? 'checked' : ''} 
-                aria-label="할일 완료 여부 토글"
-            >
+        <div class="article-head">
+            <span class="badge-tag ${sourceClass}">${escapeHtml(a.source)}</span>
+            <span class="article-time">${timeLabel(a.published_at)}</span>
         </div>
-        <div class="todo-body">
-            <div class="todo-header-row">
-                <span class="todo-title">${escapeHtml(todo.title)}</span>
-            </div>
-            ${descHtml}
-            <div class="todo-meta">
-                <span class="badge-tag badge-category">📁 ${escapeHtml(todo.category || '기타')}</span>
-                <span class="badge-tag ${priorityClass}">${priorityLabel}</span>
-                ${dueBadgeHtml}
-            </div>
-        </div>
-        <div class="todo-actions">
-            <button class="action-btn btn-edit" title="수정" aria-label="할일 수정">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-            </button>
-            <button class="action-btn btn-delete" title="삭제" aria-label="할일 삭제">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-            </button>
+        <h3 class="article-title"><a href="${escapeAttr(link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(a.title)}</a></h3>
+        ${summaryHtml}
+        <div class="article-foot">
+            ${methodBadge}
+            <a class="link-original" href="${escapeAttr(link)}" target="_blank" rel="noopener noreferrer">원문 보기 ↗</a>
         </div>
     `;
-
-    // Event Bindings
-    const checkbox = card.querySelector('.todo-checkbox');
-    checkbox.addEventListener('change', () => handleToggleTodo(todo.id));
-
-    const btnEdit = card.querySelector('.btn-edit');
-    btnEdit.addEventListener('click', () => openEditModal(todo));
-
-    const btnDelete = card.querySelector('.btn-delete');
-    btnDelete.addEventListener('click', () => handleDeleteTodo(todo.id, todo.title));
-
     return card;
 }
 
-// Calculate Due Date Status
-function formatDueDate(dueDateStr) {
+function dateLabel(dateKey) {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const [year, month, day] = dueDateStr.split('-').map(Number);
-    const dueDate = new Date(year, month - 1, day);
-    dueDate.setHours(0, 0, 0, 0);
-
-    const diffDays = Math.round((dueDate - today) / (1000 * 60 * 60 * 24));
-
-    if (diffDays < 0) {
-        return { text: `${dueDateStr} (${Math.abs(diffDays)}일 지남)`, className: 'due-overdue' };
-    } else if (diffDays === 0) {
-        return { text: '오늘 마감!', className: 'due-today' };
-    } else if (diffDays === 1) {
-        return { text: '내일 마감 (D-1)', className: 'due-today' };
-    } else {
-        return { text: `${dueDateStr} (D-${diffDays})`, className: '' };
-    }
+    const d = new Date(dateKey + 'T00:00:00+09:00');
+    const todayKey = toKstKey(today);
+    const yesterdayKey = toKstKey(new Date(today.getTime() - 86400000));
+    const dayBeforeKey = toKstKey(new Date(today.getTime() - 2 * 86400000));
+    const pretty = d.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short', timeZone: 'Asia/Seoul' });
+    if (dateKey === todayKey) return `오늘 · ${pretty}`;
+    if (dateKey === yesterdayKey) return `어제 · ${pretty}`;
+    if (dateKey === dayBeforeKey) return `그저께 · ${pretty}`;
+    return pretty;
 }
 
-// API: Handle Add Todo
-async function handleAddTodo(e) {
-    e.preventDefault();
-
-    const title = elements.todoTitleInput.value.trim();
-    if (!title) return;
-
-    const payload = {
-        title: title,
-        category: elements.todoCategoryInput.value.trim() || '업무',
-        priority: elements.todoPriorityInput.value,
-        due_date: elements.todoDueDateInput.value || null,
-        description: elements.todoDescInput.value.trim()
-    };
-
-    try {
-        const res = await fetch('/api/todos', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-
-        if (data.success) {
-            elements.todoTitleInput.value = '';
-            elements.todoDescInput.value = '';
-            elements.todoDueDateInput.value = '';
-            showToast('할일이 등록되었습니다! 🎉', 'success');
-            fetchStats();
-            fetchTodos();
-        } else {
-            showToast(data.error || '등록 실패', 'error');
-        }
-    } catch (err) {
-        console.error('할일 추가 실패:', err);
-        showToast('서버 통신 오류가 발생했습니다.', 'error');
-    }
+function toKstKey(date) {
+    return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
 }
 
-// API: Handle Toggle Todo
-async function handleToggleTodo(id) {
-    try {
-        const res = await fetch(`/api/todos/${id}/toggle`, {
-            method: 'PATCH'
-        });
-        const data = await res.json();
-
-        if (data.success) {
-            const isCompleted = data.todo.completed === 1;
-            showToast(isCompleted ? '할일을 완료했습니다! 👏' : '진행 중으로 변경되었습니다.', 'info');
-            fetchStats();
-            fetchTodos();
-        } else {
-            showToast(data.error || '상태 변경 실패', 'error');
-        }
-    } catch (err) {
-        console.error('토글 실패:', err);
-        showToast('서버 통신 오류가 발생했습니다.', 'error');
-    }
+function timeLabel(iso) {
+    const d = new Date(iso);
+    return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' });
 }
 
-// API: Handle Delete Todo
-async function handleDeleteTodo(id, title) {
-    if (!confirm(`"${title}" 항목을 삭제하시겠습니까?`)) {
-        return;
-    }
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
 
-    try {
-        const res = await fetch(`/api/todos/${id}`, {
-            method: 'DELETE'
-        });
-        const data = await res.json();
-
-        if (data.success) {
-            showToast('할일이 삭제되었습니다.', 'info');
-            fetchStats();
-            fetchTodos();
-        } else {
-            showToast(data.error || '삭제 실패', 'error');
-        }
-    } catch (err) {
-        console.error('삭제 실패:', err);
-        showToast('서버 통신 오류가 발생했습니다.', 'error');
-    }
-}
-
-// Edit Modal Functions
-function openEditModal(todo) {
-    state.editingTodo = todo;
-    elements.editTodoId.value = todo.id;
-    elements.editTitleInput.value = todo.title;
-    elements.editCategoryInput.value = todo.category || '업무';
-    elements.editPriorityInput.value = todo.priority || 'medium';
-    elements.editDueDateInput.value = todo.due_date || '';
-    elements.editDescInput.value = todo.description || '';
-
-    elements.editModal.classList.remove('hidden');
-    elements.editTitleInput.focus();
-}
-
-function closeEditModal() {
-    elements.editModal.classList.add('hidden');
-    state.editingTodo = null;
-}
-
-async function handleSaveEdit(e) {
-    e.preventDefault();
-    const id = elements.editTodoId.value;
-    if (!id) return;
-
-    const payload = {
-        title: elements.editTitleInput.value.trim(),
-        category: elements.editCategoryInput.value.trim() || '업무',
-        priority: elements.editPriorityInput.value,
-        due_date: elements.editDueDateInput.value || null,
-        description: elements.editDescInput.value.trim()
-    };
-
-    try {
-        const res = await fetch(`/api/todos/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-
-        if (data.success) {
-            closeEditModal();
-            showToast('성공적으로 수정되었습니다!', 'success');
-            fetchStats();
-            fetchTodos();
-        } else {
-            showToast(data.error || '수정 실패', 'error');
-        }
-    } catch (err) {
-        console.error('수정 실패:', err);
-        showToast('서버 통신 오류가 발생했습니다.', 'error');
-    }
-}
-
-// Toast Notification
 function showToast(message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
-    
-    let iconSvg = '';
-    if (type === 'success') {
-        iconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>';
-    } else if (type === 'error') {
-        iconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
-    } else {
-        iconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>';
-    }
-
-    toast.innerHTML = `${iconSvg}<span>${escapeHtml(message)}</span>`;
-    elements.toastContainer.appendChild(toast);
-
+    toast.textContent = message;
+    el.toastContainer.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
     setTimeout(() => {
-        toast.classList.add('toast-out');
-        setTimeout(() => toast.remove(), 250);
-    }, 2800);
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 3200);
 }
 
-// Helper: Escape HTML
 function escapeHtml(text) {
-    if (!text) return '';
     const div = document.createElement('div');
-    div.textContent = text;
+    div.textContent = text == null ? '' : String(text);
     return div.innerHTML;
+}
+
+function escapeAttr(text) {
+    return escapeHtml(text).replace(/"/g, '&quot;');
 }

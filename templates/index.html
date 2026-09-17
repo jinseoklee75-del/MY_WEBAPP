@@ -3,13 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Python Flask 기반의 모던 할일 관리 웹 애플리케이션 TaskFlow">
-    <title>TaskFlow | 모던 할일 관리</title>
-    <!-- Google Fonts -->
+    <meta name="description" content="매일경제·한국경제의 최근 3일 AI 기사를 자동 수집해 3줄로 요약하는 뉴스 브리핑 앱">
+    <title>AI 뉴스 브리핑 | 매경·한경 AI 기사 3줄 요약</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -24,14 +22,15 @@
         <header class="app-header">
             <div class="brand-area">
                 <div class="logo-badge">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="9 11 12 14 22 4"></polyline>
-                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 4h12a2 2 0 0 1 2 2v12a2 2 0 0 0 2 2H6a2 2 0 0 1-2-2V4z"></path>
+                        <path d="M18 8h2v10a2 2 0 0 1-2 2"></path>
+                        <line x1="7" y1="8" x2="13" y2="8"></line><line x1="7" y1="12" x2="13" y2="12"></line><line x1="7" y1="16" x2="11" y2="16"></line>
                     </svg>
                 </div>
                 <div>
-                    <h1 class="brand-title">Task<span>Flow</span></h1>
-                    <p class="brand-subtitle">스마트하고 직관적인 Python Flask 할일 관리 앱</p>
+                    <h1 class="brand-title">AI <span>뉴스 브리핑</span></h1>
+                    <p class="brand-subtitle">매일경제 · 한국경제의 최근 3일 AI 기사를 자동 수집해 3줄로 요약합니다</p>
                 </div>
             </div>
             <div class="header-right">
@@ -46,223 +45,90 @@
             </div>
         </header>
 
-        <!-- Stats Overview Cards -->
-        <section class="stats-grid" id="statsContainer">
+        <!-- Stats -->
+        <section class="stats-grid">
             <div class="stat-card">
                 <div class="stat-icon icon-total">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h12a2 2 0 0 1 2 2v12a2 2 0 0 0 2 2H6a2 2 0 0 1-2-2V4z"></path><path d="M18 8h2v10a2 2 0 0 1-2 2"></path><line x1="7" y1="8" x2="13" y2="8"></line><line x1="7" y1="12" x2="13" y2="12"></line></svg>
                 </div>
                 <div class="stat-content">
-                    <span class="stat-label">전체 할일</span>
+                    <span class="stat-label">최근 3일 AI 기사</span>
                     <h3 class="stat-value" id="statTotal">0</h3>
                 </div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon icon-pending">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                </div>
+                <div class="stat-icon icon-mk">MK</div>
                 <div class="stat-content">
-                    <span class="stat-label">진행 중</span>
-                    <h3 class="stat-value" id="statPending">0</h3>
+                    <span class="stat-label">매일경제</span>
+                    <h3 class="stat-value" id="statMk">0</h3>
                 </div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon icon-completed">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                </div>
+                <div class="stat-icon icon-hk">HK</div>
                 <div class="stat-content">
-                    <span class="stat-label">완료됨</span>
-                    <h3 class="stat-value" id="statCompleted">0</h3>
+                    <span class="stat-label">한국경제</span>
+                    <h3 class="stat-value" id="statHk">0</h3>
                 </div>
             </div>
             <div class="stat-card stat-progress-card">
                 <div class="stat-progress-header">
-                    <span class="stat-label">달성률</span>
+                    <span class="stat-label">요약 완료</span>
                     <span class="stat-percentage" id="statRateText">0%</span>
                 </div>
                 <div class="progress-bar-track">
                     <div class="progress-bar-fill" id="statProgressBar" style="width: 0%"></div>
                 </div>
+                <p class="stat-footnote" id="statFootnote">요약 대기 0건</p>
             </div>
         </section>
 
-        <!-- Add Todo Form Card -->
-        <section class="card add-todo-card">
-            <h2 class="section-heading">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                새로운 할일 등록
-            </h2>
-            <form id="addTodoForm" class="todo-form">
-                <div class="form-main-row">
-                    <input 
-                        type="text" 
-                        id="todoTitleInput" 
-                        class="form-control title-input" 
-                        placeholder="어떤 작업을 완료해야 하나요? (예: 파이썬 웹서버 기동 확인)" 
-                        required 
-                        autocomplete="off"
-                    >
-                    <button type="submit" class="btn btn-primary" id="btnSubmitTodo">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                        <span>할일 추가</span>
-                    </button>
-                </div>
-
-                <div class="form-details-grid">
-                    <div class="form-field">
-                        <label for="todoCategoryInput">카테고리</label>
-                        <div class="input-with-icon">
-                            <input 
-                                type="text" 
-                                id="todoCategoryInput" 
-                                class="form-control" 
-                                list="categorySuggestions" 
-                                placeholder="업무, 개인, 학습 등"
-                                value="업무"
-                            >
-                            <datalist id="categorySuggestions">
-                                <option value="업무">
-                                <option value="개발">
-                                <option value="학습">
-                                <option value="개인">
-                                <option value="회의">
-                            </datalist>
-                        </div>
-                    </div>
-
-                    <div class="form-field">
-                        <label for="todoPriorityInput">우선순위</label>
-                        <select id="todoPriorityInput" class="form-control select-control">
-                            <option value="high">🔥 높음 (High)</option>
-                            <option value="medium" selected>⚡ 보통 (Medium)</option>
-                            <option value="low">🌱 낮음 (Low)</option>
-                        </select>
-                    </div>
-
-                    <div class="form-field">
-                        <label for="todoDueDateInput">마감일 (선택)</label>
-                        <input type="date" id="todoDueDateInput" class="form-control">
-                    </div>
-                </div>
-
-                <div class="form-field desc-field">
-                    <input 
-                        type="text" 
-                        id="todoDescInput" 
-                        class="form-control desc-input" 
-                        placeholder="추가 세부 메모나 링크가 있다면 적어주세요 (선택사항)"
-                    >
-                </div>
-            </form>
-        </section>
-
-        <!-- Filters, Search & View Controls -->
+        <!-- Controls -->
         <section class="controls-bar">
-            <!-- Filter Tabs -->
             <div class="filter-tabs" role="tablist">
-                <button class="filter-tab active" data-status="all" id="tabAll">
-                    전체 <span class="badge" id="badgeAll">0</span>
-                </button>
-                <button class="filter-tab" data-status="active" id="tabActive">
-                    진행 중 <span class="badge" id="badgeActive">0</span>
-                </button>
-                <button class="filter-tab" data-status="completed" id="tabCompleted">
-                    완료 <span class="badge" id="badgeCompleted">0</span>
-                </button>
+                <button class="filter-tab active" data-source="all">전체 <span class="badge" id="badgeAll">0</span></button>
+                <button class="filter-tab" data-source="매일경제">매일경제 <span class="badge" id="badgeMk">0</span></button>
+                <button class="filter-tab" data-source="한국경제">한국경제 <span class="badge" id="badgeHk">0</span></button>
             </div>
-
-            <!-- Search and Category Filter -->
             <div class="controls-right">
                 <div class="search-box">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                    <input type="text" id="searchInput" placeholder="할일 검색..." autocomplete="off">
+                    <input type="text" id="searchInput" placeholder="제목·요약 검색..." autocomplete="off">
                     <button type="button" class="btn-clear-search" id="btnClearSearch" title="검색어 지우기">&times;</button>
                 </div>
-
-                <select id="categoryFilter" class="filter-select" title="카테고리 필터">
-                    <option value="all">모든 카테고리</option>
-                </select>
-
-                <select id="sortFilter" class="filter-select" title="정렬 기준">
-                    <option value="created_desc">최신 등록순</option>
-                    <option value="due_date">마감일 임박순</option>
-                    <option value="priority">우선순위 높은순</option>
-                </select>
+                <button type="button" class="btn btn-primary" id="btnRefresh">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                    <span id="btnRefreshText">기사 업데이트</span>
+                </button>
             </div>
         </section>
 
-        <!-- Task List Container -->
-        <main class="tasks-container">
-            <div id="todoList" class="todo-list">
-                <!-- Todo items dynamically injected here -->
-            </div>
+        <!-- Pipeline progress -->
+        <div id="pipelineBar" class="pipeline-bar hidden">
+            <span class="spinner"></span>
+            <span id="pipelineText">새 기사를 확인하고 있습니다...</span>
+        </div>
 
-            <!-- Empty State -->
+        <!-- Article list -->
+        <main class="articles-container">
+            <div id="articleList" class="article-list"></div>
+
             <div id="emptyState" class="empty-state hidden">
                 <div class="empty-illustration">
-                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <path d="m9 12 2 2 4-4"></path>
-                    </svg>
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                 </div>
-                <h3 class="empty-title">등록된 할일이 없습니다</h3>
-                <p class="empty-subtitle">위의 입력창에서 새로운 목표나 해야 할 일을 추가해보세요!</p>
+                <h3 class="empty-title">표시할 기사가 없습니다</h3>
+                <p class="empty-subtitle">"기사 업데이트"를 눌러 최근 3일간의 AI 기사를 수집해 보세요.</p>
             </div>
         </main>
 
-        <!-- Footer -->
         <footer class="app-footer">
-            <p>TaskFlow &bull; Powered by <strong>Python Flask</strong> &amp; <strong>Supabase</strong> PostgreSQL &bull; Hosted on <strong>Vercel</strong> &bull; <span id="footerDbInfo"></span></p>
+            <p>AI 뉴스 브리핑 &bull; 출처: <strong>매일경제</strong>, <strong>한국경제</strong> (Google News 검색 기반) &bull; Powered by <strong>Python Flask</strong> &amp; <strong>Supabase</strong> PostgreSQL &bull; Hosted on <strong>Vercel</strong> &bull; <span id="footerDbInfo"></span></p>
+            <p class="footer-note" id="footerSummarizer"></p>
         </footer>
     </div>
 
-    <!-- Edit Modal Dialog -->
-    <div id="editModal" class="modal-backdrop hidden">
-        <div class="modal-card">
-            <div class="modal-header">
-                <h3 class="modal-title">할일 수정</h3>
-                <button type="button" class="modal-close" id="btnCloseModal">&times;</button>
-            </div>
-            <form id="editTodoForm" class="modal-body">
-                <input type="hidden" id="editTodoId">
-                <div class="form-field">
-                    <label for="editTitleInput">제목</label>
-                    <input type="text" id="editTitleInput" class="form-control" required>
-                </div>
-                <div class="form-details-grid">
-                    <div class="form-field">
-                        <label for="editCategoryInput">카테고리</label>
-                        <input type="text" id="editCategoryInput" class="form-control" required>
-                    </div>
-                    <div class="form-field">
-                        <label for="editPriorityInput">우선순위</label>
-                        <select id="editPriorityInput" class="form-control select-control">
-                            <option value="high">🔥 높음 (High)</option>
-                            <option value="medium">⚡ 보통 (Medium)</option>
-                            <option value="low">🌱 낮음 (Low)</option>
-                        </select>
-                    </div>
-                    <div class="form-field">
-                        <label for="editDueDateInput">마감일</label>
-                        <input type="date" id="editDueDateInput" class="form-control">
-                    </div>
-                </div>
-                <div class="form-field">
-                    <label for="editDescInput">메모 / 설명</label>
-                    <textarea id="editDescInput" class="form-control textarea-control" rows="3" placeholder="세부 메모를 입력하세요..."></textarea>
-                </div>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" id="btnCancelEdit">취소</button>
-                    <button type="submit" class="btn btn-primary" id="btnSaveEdit">변경사항 저장</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Toast Notification Container -->
     <div id="toastContainer" class="toast-container"></div>
 
-    <!-- Custom JS -->
     <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
