@@ -2,7 +2,11 @@ import sqlite3
 import os
 from datetime import datetime
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'todos.db')
+# Vercel serverless functions have a read-only filesystem except /tmp
+if os.environ.get('VERCEL'):
+    DB_PATH = os.path.join('/tmp', 'todos.db')
+else:
+    DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'todos.db')
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH)

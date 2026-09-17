@@ -3,3 +3,7 @@ __pycache__/
 todos.db
 .venv/
 venv/
+.vercel/
+
+.vercel
+.env*
