@@ -16,6 +16,9 @@ const state = {
 // DOM Elements
 const elements = {
     currentDateDisplay: document.getElementById('currentDateDisplay'),
+    dbStatus: document.getElementById('dbStatus'),
+    dbStatusText: document.getElementById('dbStatusText'),
+    footerDbInfo: document.getElementById('footerDbInfo'),
     statTotal: document.getElementById('statTotal'),
     statPending: document.getElementById('statPending'),
     statCompleted: document.getElementById('statCompleted'),
@@ -57,6 +60,7 @@ const elements = {
 document.addEventListener('DOMContentLoaded', () => {
     setupDateDisplay();
     setupEventListeners();
+    fetchDbHealth();
     fetchStats();
     fetchTodos();
 });
@@ -147,6 +151,27 @@ async function fetchTodos() {
 }
 
 // API: Fetch Stats
+// Check live database connection and show it in the header/footer
+async function fetchDbHealth() {
+    try {
+        const res = await fetch('/api/health');
+        const data = await res.json();
+        if (data.connected) {
+            elements.dbStatus.classList.add('is-connected');
+            elements.dbStatusText.textContent = `${data.db.provider} 연결됨`;
+            elements.dbStatus.title = `${data.db.host} / ${data.db.database} (${data.db.version})`;
+            elements.footerDbInfo.textContent = `DB: ${data.db.host}`;
+        } else {
+            throw new Error(data.error || 'DB 연결 실패');
+        }
+    } catch (err) {
+        elements.dbStatus.classList.add('is-error');
+        elements.dbStatusText.textContent = 'DB 연결 안 됨';
+        elements.footerDbInfo.textContent = 'DB 연결 실패';
+        console.error('DB 상태 확인 실패:', err);
+    }
+}
+
 async function fetchStats() {
     try {
         const res = await fetch('/api/stats');

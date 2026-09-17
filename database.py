@@ -15,6 +15,22 @@ def get_connection():
     return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
 
+def check_connection():
+    """Ping the database and report where the app is connected."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT version() AS version, current_database() AS db')
+    row = cursor.fetchone()
+    conn.close()
+    host = DATABASE_URL.split('@')[-1].split('/')[0]
+    return {
+        'provider': 'Supabase' if 'supabase' in host else 'PostgreSQL',
+        'host': host,
+        'database': row['db'],
+        'version': row['version'].split(',')[0],
+    }
+
+
 def _serialize(row):
     """Convert a DB row to a JSON-friendly dict (timestamps -> strings)."""
     if row is None:

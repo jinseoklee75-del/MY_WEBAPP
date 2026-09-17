@@ -87,6 +87,14 @@ def delete_todo(todo_id):
         return jsonify({'success': False, 'error': '항목을 찾을 수 없습니다.'}), 404
     return jsonify({'success': True, 'message': '삭제되었습니다.'})
 
+@app.route('/api/health', methods=['GET'])
+def health():
+    try:
+        info = database.check_connection()
+        return jsonify({'success': True, 'connected': True, 'db': info})
+    except Exception as e:
+        return jsonify({'success': False, 'connected': False, 'error': str(e)}), 503
+
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
     stats = database.get_stats()

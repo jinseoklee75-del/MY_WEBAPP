@@ -34,9 +34,15 @@
                     <p class="brand-subtitle">스마트하고 직관적인 Python Flask 할일 관리 앱</p>
                 </div>
             </div>
-            <div class="header-status">
-                <span class="live-dot"></span>
-                <span id="currentDateDisplay">오늘</span>
+            <div class="header-right">
+                <div class="header-status db-status" id="dbStatus" title="데이터베이스 연결 상태">
+                    <span class="live-dot" id="dbStatusDot"></span>
+                    <span id="dbStatusText">DB 연결 확인 중...</span>
+                </div>
+                <div class="header-status">
+                    <span class="live-dot"></span>
+                    <span id="currentDateDisplay">오늘</span>
+                </div>
             </div>
         </header>
 
@@ -206,7 +212,7 @@
 
         <!-- Footer -->
         <footer class="app-footer">
-            <p>TaskFlow &bull; Powered by <strong>Python Flask</strong> &amp; SQLite</p>
+            <p>TaskFlow &bull; Powered by <strong>Python Flask</strong> &amp; <strong>Supabase</strong> PostgreSQL &bull; Hosted on <strong>Vercel</strong> &bull; <span id="footerDbInfo"></span></p>
         </footer>
     </div>
 

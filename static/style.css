@@ -207,6 +207,28 @@ body {
     box-shadow: 0 0 8px var(--status-success);
 }
 
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.db-status .live-dot {
+    background-color: var(--text-secondary);
+    box-shadow: none;
+}
+
+.db-status.is-connected .live-dot {
+    background-color: #3ecf8e; /* Supabase green */
+    box-shadow: 0 0 8px #3ecf8e;
+}
+
+.db-status.is-error .live-dot {
+    background-color: var(--status-danger, #ef4444);
+    box-shadow: 0 0 8px var(--status-danger, #ef4444);
+}
+
 /* Stats Overview Cards */
 .stats-grid {
     display: grid;
