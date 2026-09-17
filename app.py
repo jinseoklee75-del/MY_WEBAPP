@@ -1,4 +1,9 @@
 import os
+from dotenv import load_dotenv
+
+# Local development: load DATABASE_URL from .env.local (pulled via `vercel env pull`)
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env.local'))
+
 from flask import Flask, render_template, request, jsonify
 import database
 
